@@ -101,6 +101,7 @@ def main():
     ap.add_argument("--max", type=int, default=60)
     ap.add_argument("--cover", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "cover.jpg"))
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--token-file", help="github_token.env; sem ele usa as credenciais do remote origin")
     a = ap.parse_args()
 
     repo = os.path.abspath(a.repo)
@@ -113,7 +114,8 @@ def main():
         desc = open(a.descricao_arquivo, encoding="utf-8").read().strip()
 
     # Estado atual da branch gh-pages (se existir)
-    sh("git", "fetch", "origin", "gh-pages", cwd=repo) if subprocess.run(
+    # refspec explicito: em clone single-branch/shallow, "fetch origin gh-pages" nao cria origin/gh-pages
+    sh("git", "fetch", "--depth=1", "origin", "+refs/heads/gh-pages:refs/remotes/origin/gh-pages", cwd=repo) if subprocess.run(
         ["git", "ls-remote", "--exit-code", "--heads", "origin", "gh-pages"],
         cwd=repo, capture_output=True).returncode == 0 else None
     work = os.path.join(repo, ".feed_work")
@@ -188,7 +190,17 @@ def main():
                           capture_output=True, text=True).stdout.strip()
     commit = subprocess.run(g + ["commit-tree", tree, "-m", "Feed: %s" % eps[0]["titulo"]],
                             cwd=work, env=env, check=True, capture_output=True, text=True).stdout.strip()
-    sh("git", "push", "--force", "origin", "%s:refs/heads/gh-pages" % commit, cwd=repo)
+    destino = "origin"
+    if a.token_file:
+        # aceita "GITHUB_TOKEN=xxx" ou so o token na primeira linha
+        tok = open(a.token_file, encoding="utf-8").read().strip().splitlines()[0]
+        tok = tok.split("=", 1)[1].strip() if tok.startswith("GITHUB_TOKEN=") else tok.strip()
+        destino = "https://x-access-token:%s@github.com/%s/%s.git" % (tok, OWNER, REPO)
+    r = subprocess.run(["git", "push", "--force", destino, "%s:refs/heads/gh-pages" % commit],
+                       cwd=repo, capture_output=True, text=True)
+    if r.returncode:
+        err = r.stderr.replace(tok, "***") if a.token_file else r.stderr
+        sys.exit("ERRO no push:\n" + err[-1500:])
     os.remove(idx)
     shutil.rmtree(work, ignore_errors=True)
     print("Publicado: %s/feed.xml" % BASE)
