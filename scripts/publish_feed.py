@@ -45,11 +45,26 @@ def data_br(d):
     return "%d de %s" % (d.day, MESES[d.month - 1])
 
 
+def desc_html(t):
+    """Descricao multilinha -> HTML, para a lista de tempos aparecer como lista
+    no app (pedido do Luiz em 15/nov/2026: "mostrar no descritivo do episodio os
+    pontos de conteudos nos tempos corretos; facilita navegacao").
+    Linha em branco separa paragrafo; quebra simples vira <br/>. Vai em CDATA,
+    por isso o ']]>' precisa ser neutralizado antes."""
+    t = t.replace("]]>", "]]&gt;")
+    blocos = []
+    for par in t.split("\n\n"):
+        linhas = [html.escape(l.strip()) for l in par.splitlines() if l.strip()]
+        if linhas:
+            blocos.append("<p>" + "<br/>".join(linhas) + "</p>")
+    return "".join(blocos)
+
+
 def item_xml(ep):
     url = "%s/audio/%s" % (BASE, ep["arquivo"])
     return """    <item>
       <title>{t}</title>
-      <description>{d}</description>
+      <description><![CDATA[{dh}]]></description>
       <itunes:summary>{d}</itunes:summary>
       <enclosure url="{u}" length="{n}" type="{m}"/>
       <guid isPermaLink="false">{g}</guid>
@@ -58,6 +73,7 @@ def item_xml(ep):
       <itunes:episodeType>full</itunes:episodeType>
       <itunes:explicit>false</itunes:explicit>
     </item>""".format(t=html.escape(ep["titulo"]), d=html.escape(ep["descricao"]),
+                      dh=desc_html(ep["descricao"]),
                       u=html.escape(url), n=ep["bytes"], m=ep["mime"],
                       g=html.escape(ep["guid"]), p=ep["pubDate"], dur=ep["duracao"])
 
